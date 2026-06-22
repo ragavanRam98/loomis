@@ -10,6 +10,12 @@ Everything it builds runs offline. Loomis pulls every asset - CSS, fonts, images
 
 It makes prototypes, not production code. The point is to hand you something connected to react to, fast.
 
+## See it in action
+
+![The Loomis studio](docs/showcase/studio.png)
+
+The studio runs the whole weave on a local page in your browser. You pick the theme, watch each screen come in, and change any of them in plain English. Reopen it later and your work is right there.
+
 ## Why I built this
 
 I'm a programmer, and AI tools like Claude and Copilot are part of how I build. I've used them on my own projects to put together backends, an engine, frontends, and the backend side always came together - but the frontend kept letting me down. The screens I got back weren't connected to each other, and they weren't really what I had in my head.
@@ -50,6 +56,42 @@ You get:
 - Live previews of every screen, and a theme that follows your system's light or dark setting.
 
 Everything here also runs from the command line, for scripts or CI.
+
+## What it builds
+
+Real prototypes woven from specs, each one connected, clickable, and offline. Every screen below came out of a `DESIGN.md`, an `EXPERIENCE.md`, and a few stories.
+
+**ShopKart** - a full e-commerce marketplace: search, a category strip, deal grids, and a product page with offers and buy actions.
+
+<p>
+  <img src="docs/showcase/shopkart/home.png" width="380" alt="ShopKart - Home" />
+</p>
+
+**Vital** - a health monitor.
+
+<p>
+  <img src="docs/showcase/vital/activity.png" width="220" alt="Vital - Activity" />
+  <img src="docs/showcase/vital/bmi-calculator.png" width="220" alt="Vital - BMI Calculator" />
+  <img src="docs/showcase/vital/goals.png" width="220" alt="Vital - Goals" />
+</p>
+
+**Sigma** - a scientific calculator.
+
+<p>
+  <img src="docs/showcase/sigma/calculator.png" width="220" alt="Sigma - Calculator" />
+  <img src="docs/showcase/sigma/history.png" width="220" alt="Sigma - History" />
+  <img src="docs/showcase/sigma/settings.png" width="220" alt="Sigma - Settings" />
+</p>
+
+**Cadence** - a task app.
+
+<p>
+  <img src="docs/showcase/cadence/today.png" width="220" alt="Cadence - Today" />
+  <img src="docs/showcase/cadence/task-detail.png" width="220" alt="Cadence - Task detail" />
+  <img src="docs/showcase/cadence/add-task.png" width="220" alt="Cadence - Add task" />
+</p>
+
+ShopKart, Vital, and Sigma ship as ready-to-weave inputs in [`examples/`](examples). Add `--fake` to walk the flow with no key.
 
 ## Two ways to use it
 

@@ -5,6 +5,7 @@ Two ready-to-weave `bmad-ux` input folders, each containing `DESIGN.md` (visual 
 
 | Example | What it is |
 |---------|-----------|
+| [`shopkart/`](./shopkart) | **ShopKart** - an e-commerce marketplace (desktop): Home, Product detail. |
 | [`sigma/`](./sigma) | **Sigma** - a scientific calculator (mobile): Calculator, History, Settings. |
 | [`vital/`](./vital) | **Vital** - a health monitor (mobile): Dashboard, Activity, BMI Calculator, Goals, Profile. |
 
