@@ -3,7 +3,6 @@
   "version": "0.2.0",
   "description": "Loomis - the UI Weaver: turns BMAD docs (DESIGN.md + EXPERIENCE.md + stories) into a runnable, connected, fully-offline HTML prototype via an AI-UI provider (Stitch), with an interactive studio.",
   "type": "module",
-  "private": true,
   "license": "MIT",
   "author": "Ragav <ragavan.ramasamy.per@gmail.com>",
   "homepage": "https://github.com/ragavanRam98/loomis#readme",
@@ -24,6 +23,12 @@
     "mcp",
     "offline"
   ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -32,6 +37,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "prepublishOnly": "npm run build",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
