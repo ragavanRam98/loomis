@@ -1,0 +1,54 @@
+{
+  "name": "loomis",
+  "version": "0.2.0",
+  "description": "Loomis - the UI Weaver: turns BMAD docs (DESIGN.md + EXPERIENCE.md + stories) into a runnable, connected, fully-offline HTML prototype via an AI-UI provider (Stitch), with an interactive studio.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "author": "Ragav <ragavan.ramasamy.per@gmail.com>",
+  "homepage": "https://github.com/ragavanRam98/loomis#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ragavanRam98/loomis.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ragavanRam98/loomis/issues"
+  },
+  "keywords": [
+    "bmad",
+    "stitch",
+    "ui",
+    "prototype",
+    "design-to-code",
+    "ai",
+    "mcp",
+    "offline"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "loomis": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "cheerio": "^1.0.0",
+    "undici": "^6.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "linkinator": "^6.1.2",
+    "serve": "^14.2.4",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

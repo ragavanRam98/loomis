@@ -1,0 +1,9 @@
+# bmad-weave-ui (workflow overrides)
+[workflow]
+core_entry = "loomis/dist/index.js"
+# The deterministic core is invoked as: node {core_entry} <verb> <run-folder> [args]
+# Verbs: init, validate, discover, sync, design-gate, design-approve, enumerate, nav-graph,
+# generate-all, wire, assemble, board, check, regen, variant, repair, refine, refinements,
+# reconcile, suggest, promote, add, coverage, watch, studio.
+# `studio` is the interactive browser weave (the alternative to the headless gate→watch→batch flow).
+# Add --fake to any generating verb to use the in-memory provider (no network).

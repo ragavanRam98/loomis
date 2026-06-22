@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.log
+.loomis-run.log
+.env
+coverage/
+
+# Loomis runtime artifacts (generated run folders / bundles / studio session locks)
+out/
+**/out/
+.studio.lock
+manifest.json
+*.pre-refine*.html
+*.option-*.html
+
+# Local run workspaces + internal design-reference artifacts (examples/ is the user-facing demo)
+_demo/
+run-*/
+
+# OS
+.DS_Store
+Thumbs.db

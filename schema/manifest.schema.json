@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://loomis.dev/manifest.schema.json",
+  "title": "Loomis Manifest (flat JSON receipt)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["edges", "unresolved", "screens"],
+  "properties": {
+    "projectId": { "type": "string" },
+    "entry": { "type": "array", "items": { "type": "string" } },
+    "edges": { "type": "array", "items": { "$ref": "#/definitions/edge" } },
+    "unresolved": { "type": "array", "items": { "type": "string" } },
+    "screens": { "type": "array", "items": { "$ref": "#/definitions/screen" } },
+    "designSystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "source"],
+      "properties": {
+        "assetId": { "type": "string" },
+        "source": { "type": "string" },
+        "roleMap": { "type": "object", "additionalProperties": { "type": "string" } },
+        "designMdHash": { "type": "string" },
+        "approved": { "type": "boolean" },
+        "device": { "type": "string", "enum": ["mobile", "desktop", "tablet", "agnostic"] },
+        "resolved": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "namedColors": { "type": "object", "additionalProperties": { "type": "string" } },
+            "customColor": { "type": "string" },
+            "font": { "type": "string" },
+            "roundness": { "type": "string" },
+            "colorMode": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "label": { "type": "string" },
+        "region": { "type": "string" }
+      }
+    },
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screenId", "status"],
+      "properties": {
+        "screenId": { "type": "string" },
+        "story": { "type": "string" },
+        "surface": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in-flight", "done", "failed"] },
+        "inputHash": { "type": "string" },
+        "providerScreen": { "type": "string" },
+        "htmlPath": { "type": "string" },
+        "screenshotPath": { "type": "string" },
+        "links": { "type": "array", "items": { "type": "string" } },
+        "omissions": { "type": "array", "items": { "type": "string" } },
+        "refinements": { "type": "array", "items": { "type": "string" } },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["option", "providerScreen", "htmlPath"],
+            "properties": {
+              "option": { "type": "integer", "minimum": 1 },
+              "providerScreen": { "type": "string" },
+              "htmlPath": { "type": "string" },
+              "screenshotPath": { "type": "string" }
+            }
+          }
+        },
+        "regenCount": { "type": "integer", "minimum": 0 },
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "verdict": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
