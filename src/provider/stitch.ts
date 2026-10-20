@@ -35,6 +35,11 @@ function findScreenRef(result: unknown): string | undefined {
   return matches ? matches[matches.length - 1] : undefined;
 }
 
+/** Every distinct `projects/{id}/screens/{id}` reference in a provider result, in order. */
+function findScreenRefs(result: unknown): string[] {
+  return [...new Set(JSON.stringify(result ?? {}).match(SCREEN_REF) ?? [])];
+}
+
 interface StitchTheme {
   namedColors?: Record<string, string>;
   customColor?: string;
@@ -183,6 +188,7 @@ export class StitchProvider implements UIProvider {
     if (opts?.designSystemId) args.designSystem = opts.designSystemId;
 
     let result: unknown;
+    let generated = true;
     try {
       result = await mcpToolCall(this.apiKey, 'generate_screen_from_text', args, this.transportOpts);
     } catch (e) {
@@ -190,9 +196,10 @@ export class StitchProvider implements UIProvider {
       // Dropped connection: generation may have SILENTLY SUCCEEDED. Reconcile by listing
       // screens - never re-issue generate (which would orphan a duplicate, no delete API).
       result = await mcpToolCall(this.apiKey, 'list_screens', { projectId }, this.transportOpts);
+      generated = false;
     }
 
-    let ref = findScreenRef(result);
+    let ref = generated ? await this.pageAmong(findScreenRefs(result)) : findScreenRef(result);
     if (!ref) {
       // The generate response may not embed the screen ref; recover the newest screen.
       const listed = await mcpToolCall(this.apiKey, 'list_screens', { projectId }, this.transportOpts);
@@ -203,6 +210,19 @@ export class StitchProvider implements UIProvider {
     }
     const screenId = ref.split('/').pop() ?? ref;
     return { projectId, screenId, jobRef: ref };
+  }
+
+  // A generate answer can name other screens beside the new page, such as a logo it reused, which has no device
+  // type. The page is the last reference that has one; with a single reference, or none a page, the last is taken.
+  private async pageAmong(refs: string[]): Promise<string | undefined> {
+    if (refs.length <= 1) return refs[0];
+    for (const ref of [...refs].reverse()) {
+      const screen = (await mcpToolCall(this.apiKey, 'get_screen', { name: ref }, this.transportOpts)) as {
+        deviceType?: string;
+      } | null;
+      if (screen?.deviceType) return ref;
+    }
+    return refs[refs.length - 1];
   }
 
   async editScreen(

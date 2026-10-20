@@ -157,6 +157,54 @@ describe('StitchProvider (direct transport)', () => {
     expect(body.params.arguments.deviceType).toBe('DESKTOP');
   });
 
+  // Stitch can name a screen it reused, such as a logo, beside the new page: the page is the one with a device type.
+  it('generateScreen takes the page when its answer also names an asset', async () => {
+    const { fetchImpl, bodies } = recordingResponsesFetch([
+      {
+        json: envelope({
+          outputComponents: [
+            { design: { name: 'projects/12345/screens/page1' } },
+            { image: { name: 'projects/12345/screens/logo1' } },
+          ],
+        }),
+      },
+      { json: envelope({ name: 'projects/12345/screens/logo1', title: 'Logo' }) },
+      { json: envelope({ name: 'projects/12345/screens/page1', title: 'Checkout', deviceType: 'MOBILE' }) },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const handle = await p.generateScreen('12345', 'PROMPT');
+    expect(handle).toMatchObject({ screenId: 'page1', jobRef: 'projects/12345/screens/page1' });
+    expect(getScreenArguments(bodies)).toEqual([
+      { name: 'projects/12345/screens/logo1' },
+      { name: 'projects/12345/screens/page1' },
+    ]);
+  });
+
+  it('generateScreen asks nothing more when its answer names one screen', async () => {
+    const { fetchImpl, bodies } = recordingResponsesFetch([
+      { json: envelope({ outputComponents: [{ design: { name: 'projects/12345/screens/only' } }] }) },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const handle = await p.generateScreen('12345', 'PROMPT');
+    expect(handle.screenId).toBe('only');
+    expect(bodies).toHaveLength(1);
+  });
+
+  it('generateScreen takes the last screen when none it names is a page', async () => {
+    const { fetchImpl } = recordingResponsesFetch([
+      {
+        json: envelope({
+          outputComponents: [{ image: { name: 'projects/12345/screens/a1' } }, { image: { name: 'projects/12345/screens/a2' } }],
+        }),
+      },
+      { json: envelope({ name: 'projects/12345/screens/a2' }) },
+      { json: envelope({ name: 'projects/12345/screens/a1' }) },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const handle = await p.generateScreen('12345', 'PROMPT');
+    expect(handle.screenId).toBe('a2');
+  });
+
   it('generateScreen reconciles on a dropped connection (never re-issues generate)', async () => {
     const listEnv = envelope({ screens: [{ name: 'projects/12345/screens/recovered' }] });
     const fetchImpl = throwThenFetch(new Error('fetch failed'), listEnv);

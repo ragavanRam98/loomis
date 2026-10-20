@@ -9,6 +9,7 @@ We're pre-1.0, so the CLI verbs and the JSON output can still change between min
 ### Fixed
 - Real screens arrive again. Stitch's `get_screen` now takes the screen's resource name alone and refuses a request with any other field, so every screen timed out after Stitch had generated it. Loomis now sends only the name.
 - A tool that runs but fails (MCP's `isError`) is raised as an error with its message, instead of being taken as an answer that a poll waits on until it times out.
+- A screen can no longer come out as an image. Stitch's answer to a generate can name a screen it reused, such as a logo, beside the new page, and Loomis took the last one named. It now takes the page, the screen with a device type.
 
 ## [0.2.0] - 2026-06-22 - first public release
 
