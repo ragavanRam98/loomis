@@ -60,6 +60,33 @@ function throwThenFetch(error: Error, then: unknown): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
+/** Per-call responses as `responsesFetch` gives them, recording each JSON-RPC request's body (none for downloads). */
+function recordingResponsesFetch(seq: Array<{ json?: unknown; text?: string; bytes?: Uint8Array }>): {
+  fetchImpl: typeof fetch;
+  bodies: Array<{ params?: { name?: string; arguments?: Record<string, unknown> } } | undefined>;
+} {
+  const bodies: Array<{ params?: { name?: string; arguments?: Record<string, unknown> } } | undefined> = [];
+  let i = 0;
+  const fetchImpl = (async (_url: unknown, init?: { body?: string }) => {
+    bodies.push(init?.body ? JSON.parse(init.body) : undefined);
+    const r = seq[Math.min(i, seq.length - 1)]!;
+    i += 1;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => r.json,
+      text: async () => r.text ?? '',
+      arrayBuffer: async () => (r.bytes ?? new Uint8Array()).buffer,
+    } as unknown as Response;
+  }) as unknown as typeof fetch;
+  return { fetchImpl, bodies };
+}
+
+/** The arguments of every get_screen request recorded. */
+function getScreenArguments(bodies: ReturnType<typeof recordingResponsesFetch>['bodies']): unknown[] {
+  return bodies.filter((b) => b?.params?.name === 'get_screen').map((b) => b?.params?.arguments);
+}
+
 function envelope(obj: unknown): unknown {
   return { jsonrpc: '2.0', id: 1, result: { content: [{ text: JSON.stringify(obj) }] } };
 }
@@ -149,6 +176,61 @@ describe('StitchProvider (direct transport)', () => {
     expect(result.html).toContain('data-nav');
     expect(result.screenshot).toBeInstanceOf(Uint8Array);
     expect(result.screenshot?.length).toBe(4);
+  });
+
+  // Stitch's get_screen takes the screen's resource name alone, and refuses a request with any other field.
+  it('awaitScreen asks get_screen for the screen by its resource name alone', async () => {
+    const { fetchImpl, bodies } = recordingResponsesFetch([
+      { json: envelope({ htmlCode: { downloadUrl: 'https://x/html' } }) },
+      { text: '<html></html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    await p.awaitScreen({ projectId: '12345', screenId: 'abc', jobRef: 'projects/12345/screens/abc' });
+    expect(getScreenArguments(bodies)).toEqual([{ name: 'projects/12345/screens/abc' }]);
+  });
+
+  it('editScreen asks get_screen by the resource name alone, before the edit and while it lands', async () => {
+    const { fetchImpl, bodies } = recordingResponsesFetch([
+      { json: envelope({ htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      { json: envelope({ outputComponents: [{ design: { name: 'projects/12345/screens/abc' } }] }) },
+      { json: envelope({ htmlCode: { name: 'files/after', downloadUrl: 'https://x/after' } }) },
+      { text: '<html>edited</html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const result = await p.editScreen('12345', 'abc', 'make it calmer');
+    expect(result.html).toContain('edited');
+    expect(getScreenArguments(bodies)).toEqual([
+      { name: 'projects/12345/screens/abc' },
+      { name: 'projects/12345/screens/abc' },
+    ]);
+  });
+
+  it('generateVariants asks get_screen for each new option by its resource name alone', async () => {
+    const { fetchImpl, bodies } = recordingResponsesFetch([
+      { json: envelope({ screens: [{ name: 'projects/12345/screens/abc' }] }) },
+      { json: envelope({}) },
+      { json: envelope({ screens: [{ name: 'projects/12345/screens/abc' }, { name: 'projects/12345/screens/v1' }] }) },
+      { json: envelope({ htmlCode: { downloadUrl: 'https://x/v1' } }) },
+      { text: '<html>v1</html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const options = await p.generateVariants('12345', 'abc', 'try another layout', { count: 1 });
+    expect(options.map((o) => o.screenId)).toEqual(['v1']);
+    expect(getScreenArguments(bodies)).toEqual([{ name: 'projects/12345/screens/v1' }]);
+  });
+
+  // A tool that ran but failed answers HTTP 200 with isError and its message: an error at once, not an answer to wait on.
+  it('throws a tool error with its message at once rather than polling until the wait runs out', async () => {
+    const { fetchImpl } = recordingFetch({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { isError: true, content: [{ type: 'text', text: 'Request contains an invalid argument.' }] },
+    });
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    await expect(p.awaitScreen({ projectId: '12345', screenId: 'abc' })).rejects.toMatchObject({
+      code: 'PROVIDER_TOOL_ERROR',
+      message: 'provider tool error for get_screen: Request contains an invalid argument.',
+    });
   });
 
   it('throws PROVIDER_NO_KEY when no key is configured', () => {

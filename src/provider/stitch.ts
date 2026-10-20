@@ -24,6 +24,11 @@ export interface StitchOptions extends McpTransportOptions {
 
 const SCREEN_REF = /projects\/[^/"\s]+\/screens\/[0-9A-Za-z]+/g;
 
+/** get_screen takes the screen's resource name alone: Stitch refuses a request with any other field. */
+function getScreenArgs(projectId: string, screenId: string): Record<string, unknown> {
+  return { name: `projects/${projectId}/screens/${screenId}` };
+}
+
 /** Find the newest `projects/{id}/screens/{id}` reference anywhere in a provider result. */
 function findScreenRef(result: unknown): string | undefined {
   const matches = JSON.stringify(result ?? {}).match(SCREEN_REF);
@@ -213,7 +218,7 @@ export class StitchProvider implements UIProvider {
       const cur = (await mcpToolCall(
         this.apiKey,
         'get_screen',
-        { name: `projects/${projectId}/screens/${screenId}`, projectId, screenId },
+        getScreenArgs(projectId, screenId),
         this.transportOpts,
       )) as { htmlCode?: { name?: string } };
       priorFile = cur.htmlCode?.name;
@@ -240,7 +245,6 @@ export class StitchProvider implements UIProvider {
     // The edit may version into a NEW screen id; otherwise it edits in place.
     const ref = findScreenRef(result);
     const targetId = ref ? (ref.split('/').pop() ?? screenId) : screenId;
-    const name = `projects/${projectId}/screens/${targetId}`;
     const inPlace = targetId === screenId;
 
     const screen = (await pollUntil(
@@ -248,7 +252,7 @@ export class StitchProvider implements UIProvider {
         mcpToolCall(
           this.apiKey,
           'get_screen',
-          { name, projectId, screenId: targetId },
+          getScreenArgs(projectId, targetId),
           this.transportOpts,
         ),
       (s) => {
@@ -331,9 +335,8 @@ export class StitchProvider implements UIProvider {
   }
 
   private async fetchScreenBytes(projectId: string, screenId: string): Promise<ScreenResult> {
-    const name = `projects/${projectId}/screens/${screenId}`;
     const screen = (await pollUntil(
-      () => mcpToolCall(this.apiKey, 'get_screen', { name, projectId, screenId }, this.transportOpts),
+      () => mcpToolCall(this.apiKey, 'get_screen', getScreenArgs(projectId, screenId), this.transportOpts),
       (s) => typeof (s as { htmlCode?: { downloadUrl?: string } } | null)?.htmlCode?.downloadUrl === 'string',
     )) as { htmlCode?: { downloadUrl?: string }; screenshot?: { downloadUrl?: string } };
     const htmlUrl = screen.htmlCode?.downloadUrl;
@@ -349,14 +352,12 @@ export class StitchProvider implements UIProvider {
   }
 
   async awaitScreen(handle: ScreenHandle): Promise<ScreenResult> {
-    const name = handle.jobRef ?? `projects/${handle.projectId}/screens/${handle.screenId}`;
-
     const screen = (await pollUntil(
       () =>
         mcpToolCall(
           this.apiKey,
           'get_screen',
-          { name, projectId: handle.projectId, screenId: handle.screenId },
+          getScreenArgs(handle.projectId, handle.screenId),
           this.transportOpts,
         ),
       (s) => typeof (s as { htmlCode?: { downloadUrl?: string } } | null)?.htmlCode?.downloadUrl === 'string',

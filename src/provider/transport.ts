@@ -21,7 +21,7 @@ export interface McpTransportOptions {
 
 interface McpResponse {
   error?: { message?: string };
-  result?: { content?: Array<{ text?: string }>; structuredContent?: unknown };
+  result?: { content?: Array<{ text?: string }>; structuredContent?: unknown; isError?: boolean };
 }
 
 export const STITCH_MCP_ENDPOINT = 'https://stitch.googleapis.com/mcp';
@@ -68,6 +68,14 @@ export async function mcpToolCall(
   }
 
   const text = json.result?.content?.[0]?.text;
+  // A tool that ran but failed says so in its result (MCP's isError), its message as the content. That is an
+  // error, not an answer: taken as one, a caller polling for a field waits until it times out.
+  if (json.result?.isError) {
+    throw new ProviderError(
+      `provider tool error for ${toolName}: ${typeof text === 'string' ? text : 'unknown'}`,
+      'PROVIDER_TOOL_ERROR',
+    );
+  }
   if (typeof text === 'string') {
     try {
       return JSON.parse(text);

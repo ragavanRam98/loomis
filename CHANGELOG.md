@@ -4,6 +4,12 @@ Everything that changes in Loomis goes here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow [SemVer](https://semver.org/).
 We're pre-1.0, so the CLI verbs and the JSON output can still change between minor versions.
 
+## [Unreleased]
+
+### Fixed
+- Real screens arrive again. Stitch's `get_screen` now takes the screen's resource name alone and refuses a request with any other field, so every screen timed out after Stitch had generated it. Loomis now sends only the name.
+- A tool that runs but fails (MCP's `isError`) is raised as an error with its message, instead of being taken as an answer that a poll waits on until it times out.
+
 ## [0.2.0] - 2026-06-22 - first public release
 
 The first version I'm putting out. It does everything I set out to build, plus the studio I added
