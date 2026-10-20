@@ -79,7 +79,7 @@ Nav:
     expect(g.edges).toContainEqual({ from: 'requests', to: 'dashboard', label: 'Back to the dashboard' });
   });
 
-  it('keeps the first label when several Nav lines link the same two screens', () => {
+  it('keeps every label when several Nav lines link the same two screens, the first as the label', () => {
     const S = `## Information Architecture
 | Surface | Reached from | Purpose |
 |---|---|---|
@@ -92,7 +92,7 @@ Nav:
 - See the refunds -> Refunds`;
     const g = deriveNavGraph(S, ['dashboard', 'refunds']);
     expect(g.edges.filter((e) => e.from === 'dashboard' && e.to === 'refunds')).toEqual([
-      { from: 'dashboard', to: 'refunds', label: 'Refunds' },
+      { from: 'dashboard', to: 'refunds', label: 'Refunds', labels: ['Refunds', 'See the refunds'] },
     ]);
   });
 

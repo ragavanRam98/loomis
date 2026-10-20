@@ -90,8 +90,8 @@ export function deriveNavGraph(experienceMd: string, knownScreenIds: string[] = 
   // Per-surface Nav declarations (sidebars, CTAs, drill-downs) become edges too - the
   // page-graph reflects ALL declared navigation, not only the IA "Reached from" tree.
   // Each edge keeps the label its Nav line gives the link (`- See the requests -> Requests`),
-  // the first one when several lines link the same two screens, so `wire` can find the
-  // element the spec names even when the provider drops its hook.
+  // the first one as its label and every one in `labels` when several lines link the same two
+  // screens, so `wire` can find each element the spec names even when the provider drops its hook.
   const declaresNav = new Set<string>();
   for (const r of rows) {
     const fromId = slugify(r.surface);
@@ -108,6 +108,10 @@ export function deriveNavGraph(experienceMd: string, knownScreenIds: string[] = 
       const existing = byKey.get(`${fromId}->${toId}`);
       if (existing) {
         if (!existing.label) existing.label = nt.label;
+        else if (existing.label !== nt.label && !existing.labels?.includes(nt.label)) {
+          // Several Nav lines name the same link (a back link and a submit button): keep them all.
+          existing.labels = [...(existing.labels ?? [existing.label]), nt.label];
+        }
         continue;
       }
       addEdge({ from: fromId, to: toId, label: nt.label });

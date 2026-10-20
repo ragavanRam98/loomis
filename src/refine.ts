@@ -5,7 +5,7 @@
 // delete). Hybrid trail: the recorded refinements are what `refinements` later nudges you to
 // fold back into EXPERIENCE.md/DESIGN.md so a clean re-weave reproduces the look.
 
-import { copyFileSync, existsSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readManifest, writeManifest } from './manifest';
 import { appendLog, progress } from './log';
@@ -44,14 +44,22 @@ export async function refineScreen(
 
   // Preserve the current take before editing (non-destructive - Stitch has no delete).
   const version = (rec.refinements?.length ?? 0) + 1;
+  let currentHtml: string | undefined;
   if (rec.htmlPath) {
     const src = join(runFolder, rec.htmlPath);
-    if (existsSync(src)) copyFileSync(src, join(runFolder, `${screenId}.pre-refine${version}.html`));
+    if (existsSync(src)) {
+      currentHtml = readFileSync(src, 'utf8');
+      copyFileSync(src, join(runFolder, `${screenId}.pre-refine${version}.html`));
+    }
   }
 
   progress(`Refining ${screenId}: "${trimmed}"…`);
   const device = manifest.designSystem?.device as GenerateOptions['device'] | undefined;
-  const edited = await provider.editScreen(projectId, rec.providerScreen, trimmed, device ? { device } : {});
+  // The page as the run has it: an edit the provider makes in place goes on top of it.
+  const edited = await provider.editScreen(projectId, rec.providerScreen, trimmed, {
+    ...(device ? { device } : {}),
+    ...(currentHtml ? { currentHtml } : {}),
+  });
 
   // Persist the edited bytes over the live screen.
   const htmlPath = `${screenId}.html`;

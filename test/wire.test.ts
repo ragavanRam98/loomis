@@ -148,6 +148,38 @@ describe('wireHtml (FR-9, FR-12, NFR-3)', () => {
     expect(wireHtml(html, m, 'dashboard')).toMatch(/<a[^>]*href="requests-queue\.html"[^>]*>See the requests<\/a>/);
   });
 
+  it('links each element that carries one of the labels the spec gives the same two screens', () => {
+    const m: Manifest = {
+      entry: ['list'],
+      edges: [{ from: 'acts', to: 'detail', label: 'Rohan Sharma', labels: ['Rohan Sharma', 'Cancel the registration'] }],
+      unresolved: [],
+      screens: [
+        { screenId: 'acts', surface: 'Registration actions', status: 'done' },
+        { screenId: 'detail', surface: 'Registration detail', status: 'done' },
+      ],
+    };
+    const html = `<main><a data-nav="detail" href="#">Rohan Sharma</a><button class="danger">Cancel the registration</button></main>`;
+    const out = wireHtml(html, m, 'acts');
+    expect(out).toMatch(/<a[^>]*href="detail\.html"[^>]*>Rohan Sharma<\/a>/);
+    expect(out).toMatch(/<a[^>]*href="detail\.html"[^>]*>Cancel the registration<\/a>/);
+  });
+
+  it('wires the element carrying the label even when another element already links to the target', () => {
+    const m: Manifest = {
+      entry: ['list'],
+      edges: [{ from: 'ask', to: 'list', label: 'Ask for the correction' }],
+      unresolved: [],
+      screens: [
+        { screenId: 'ask', surface: 'Ask', status: 'done' },
+        { screenId: 'list', surface: 'List', status: 'done' },
+      ],
+    };
+    const html = `<main><a data-nav="list" href="#">Back</a><form><button type="submit">Ask for the correction</button></form></main>`;
+    const out = wireHtml(html, m, 'ask');
+    expect(out).toMatch(/<a[^>]*href="list\.html"[^>]*>Back<\/a>/);
+    expect(out).toMatch(/<a[^>]*href="list\.html"[^>]*>Ask for the correction<\/a>/);
+  });
+
   it('prefers the element carrying the label over one that only names the target', () => {
     const m: Manifest = {
       entry: ['dashboard'],

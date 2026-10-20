@@ -253,6 +253,64 @@ describe('StitchProvider (direct transport)', () => {
     ]);
   });
 
+  it('editScreen applies the DOM operations Stitch answers with when it edits in place', async () => {
+    const { fetchImpl } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'DESKTOP', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      {
+        json: envelope({
+          sessionId: 's1',
+          outputComponents: [
+            { text: 'Removed the Planned badge.' },
+            {
+              sessionEvent: {
+                eventType: 'project.file_update',
+                eventPayload: {
+                  payload_type: 'DomOperationEvent',
+                  screen_id: 'abc',
+                  dom_operations: [
+                    { action: 'remove_element', selector: 'h1 > span.badge' },
+                    { action: 'set_attribute', selector: 'aside', attr_name: 'class', attr_value: 'w-[240px]' },
+                  ],
+                },
+              },
+            },
+          ],
+        }),
+      },
+      { text: '<html><head></head><body><aside class="w-56">nav</aside><h1>Data <span class="badge">Planned</span></h1></body></html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const result = await p.editScreen('12345', 'abc', 'remove the badge');
+    expect(result.screenId).toBe('abc');
+    expect(result.html).not.toContain('Planned');
+    expect(result.html).toContain('<aside class="w-[240px]">');
+  });
+
+  it("editScreen applies in-place operations on top of the run's page, so successive edits add up", async () => {
+    const { fetchImpl, bodies } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'DESKTOP', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      {
+        json: envelope({
+          outputComponents: [
+            {
+              sessionEvent: {
+                eventType: 'project.file_update',
+                eventPayload: { payload_type: 'DomOperationEvent', screen_id: 'abc', dom_operations: [{ action: 'remove_element', selector: 'h1 > span.badge' }] },
+              },
+            },
+          ],
+        }),
+      },
+      { text: '<html><body><h1>Stitch still has the old page <span class="badge">Planned</span></h1></body></html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const current = '<html><head><style id="earlier-edit"></style></head><body><h1>Data <span class="badge">Planned</span></h1></body></html>';
+    const result = await p.editScreen('12345', 'abc', 'remove the badge', { currentHtml: current });
+    expect(result.html).toContain('id="earlier-edit"');
+    expect(result.html).not.toContain('Planned');
+    expect(bodies).toHaveLength(2); // get_screen and edit_screens: Stitch's stale page isn't fetched
+  });
+
   it('editScreen takes the edited page when its answer also names an asset', async () => {
     const { fetchImpl } = recordingResponsesFetch([
       { json: envelope({ deviceType: 'DESKTOP', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
@@ -273,6 +331,18 @@ describe('StitchProvider (direct transport)', () => {
     const result = await p.editScreen('12345', 'abc', 'remove the badge');
     expect(result.screenId).toBe('page2');
     expect(result.html).toContain('edited page');
+  });
+
+  it("editScreen fails at once, with Stitch's words, when the edit's answer names no screen", async () => {
+    let t = 0;
+    const poll = { now: () => t, sleep: async (ms: number) => void (t += ms) };
+    const { fetchImpl } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'DESKTOP', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      { json: envelope({ sessionId: 's1', outputComponents: [{ text: 'Which colour should the badge be?' }] }) },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl, poll });
+    await expect(p.editScreen('12345', 'abc', 'remove the badge')).rejects.toThrow(/named no screen.*Which colour should the badge be/);
+    expect(t).toBe(0); // no waiting for an edit that never happened
   });
 
   it('editScreen waits longer than three minutes for an edit to land', async () => {

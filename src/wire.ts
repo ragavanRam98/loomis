@@ -60,18 +60,53 @@ function fallbackWire($: cheerio.CheerioAPI, manifest: Manifest, screenId: strin
   const candidates = allCandidates.filter((el) => !STRUCTURAL.has(tagOf(el)));
   let wired = 0;
 
+  /** Point an element at a target: an anchor gets the href, anything else becomes an anchor around its content. */
+  const link = (el: El, target: string): void => {
+    const $m = $(el);
+    if (tagOf(el) === 'a') {
+      // Already an anchor (often href="#") -> just point it at the target.
+      $m.attr('href', `${target}.html`).attr('data-nav', target).attr('data-nav-state', 'live');
+    } else {
+      const cls = $m.attr('class') ?? '';
+      const inner = $m.html() ?? $m.text();
+      $m.replaceWith(
+        `<a class="${cls}" href="${target}.html" data-nav="${target}" data-nav-state="live" role="button" style="text-decoration:none">${inner}</a>`,
+      );
+    }
+  };
+
   for (const edge of manifest.edges.filter((e) => e.from === screenId)) {
     if (!done.has(edge.to)) continue;
-    // Skip edges a data-nav hook already wired - the fallback only fills the gaps.
-    if ($(`a[href="${edge.to}.html"]`).length > 0) continue;
+    // The labels the spec gives this link (`- See the requests -> Requests queue`) name the
+    // elements outright, so they match first, and for a link into an entry screen (Sign out)
+    // they beat the back-arrow guess.
+    const labels = (edge.labels ?? (edge.label ? [edge.label] : [])).map(matchText).filter((l) => l.length > 0);
+    // An edge some element already links (often a data-nav hook) needs no guessing. But each
+    // element the spec names for it gets linked too, when it isn't a live link already: a
+    // provider can drop the hook from a submit button while a back link keeps the edge live.
+    const linked = $(`a[href="${edge.to}.html"]`).toArray();
+    if (linked.length > 0) {
+      for (const label of labels) {
+        const live = $(`a[href="${edge.to}.html"]`).toArray();
+        if (live.some((el) => matchText($(el).text()).includes(label))) continue;
+        const named = candidates.filter((el) => {
+          if ($(el).closest('html').length === 0) return false; // replaced earlier in this pass
+          const href = $(el).attr('href');
+          return !(href && /\.html$/.test(href)) && matchText($(el).text()).includes(label);
+        });
+        const innermost = named.filter((el) => !named.some((o) => o !== el && $(o).parents().toArray().includes(el)));
+        const best = innermost.find((el) => matchText($(el).text()) === label) ?? innermost[0];
+        if (best) {
+          link(best, edge.to);
+          wired += 1;
+        }
+      }
+      continue;
+    }
     const isBack = entry.has(edge.to);
     const targetSurface =
       manifest.screens.find((s) => s.screenId === edge.to)?.surface ?? edge.to.replace(/-/g, ' ');
     const terms = forwardMatchTerms(targetSurface, edge.to);
-    // The label the spec gives this link (`- See the requests -> Requests queue`) names the
-    // element outright, so it matches first, and for a link into an entry screen (Sign out)
-    // it beats the back-arrow guess.
-    const label = edge.label ? matchText(edge.label) : '';
 
     // Rank matches: prefer a real link/button with a focused label over a generic container.
     const matches: Array<{ el: El; score: number }> = [];
@@ -81,13 +116,13 @@ function fallbackWire($: cheerio.CheerioAPI, manifest: Manifest, screenId: strin
       const icon = ($el.attr('data-icon') ?? '').toLowerCase();
       const text = matchText($el.text());
       const hay = `${icon} ${text}`;
-      const labelHit = label.length > 0 && text.includes(label);
+      const labelHit = labels.some((l) => text.includes(l));
       const hit =
         labelHit ||
         (isBack ? BACK_ICONS.some((b) => hay.includes(b)) : icon === edge.to || terms.some((t) => hay.includes(t)));
       if (!hit) continue;
       let score = 0;
-      if (labelHit) score += text === label ? 6 : 4;
+      if (labelHit) score += labels.includes(text) ? 6 : 4;
       if (tag === 'a' || tag === 'button') score += 3;
       if (text.length > 0 && text.length <= 40) score += 2;
       if (isBack && BACK_ICONS.some((b) => icon.includes(b))) score += 2;
@@ -95,18 +130,7 @@ function fallbackWire($: cheerio.CheerioAPI, manifest: Manifest, screenId: strin
     }
     if (matches.length === 0) continue;
     matches.sort((a, b) => b.score - a.score);
-    const $m = $(matches[0]!.el);
-
-    if (tagOf(matches[0]!.el) === 'a') {
-      // Already an anchor (often href="#") -> just point it at the target.
-      $m.attr('href', `${edge.to}.html`).attr('data-nav', edge.to).attr('data-nav-state', 'live');
-    } else {
-      const cls = $m.attr('class') ?? '';
-      const inner = $m.html() ?? $m.text();
-      $m.replaceWith(
-        `<a class="${cls}" href="${edge.to}.html" data-nav="${edge.to}" data-nav-state="live" role="button" style="text-decoration:none">${inner}</a>`,
-      );
-    }
+    link(matches[0]!.el, edge.to);
     wired += 1;
   }
   wired += drillDownWire($, manifest, screenId);

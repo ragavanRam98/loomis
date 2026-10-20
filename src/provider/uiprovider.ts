@@ -47,6 +47,12 @@ export interface GenerateOptions {
   device?: 'mobile' | 'desktop' | 'tablet' | 'agnostic';
 }
 
+/** Options for a directed edit. */
+export interface EditOptions extends GenerateOptions {
+  /** The page as the run has it now: an edit the provider makes in place applies on top of it, so successive edits add up. */
+  currentHtml?: string;
+}
+
 /** Result of a directed edit - the finished bytes plus the (possibly re-versioned) screen id. */
 export interface EditResult extends ScreenResult {
   /** The provider-side screen id of the edited screen (may differ if the provider versions it). */
@@ -91,7 +97,7 @@ export interface UIProvider {
     projectId: string,
     screenId: string,
     feedback: string,
-    opts?: GenerateOptions,
+    opts?: EditOptions,
   ): Promise<EditResult>;
   /**
    * Generate N alternative designs of an existing screen for the developer to pick from

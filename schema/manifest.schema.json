@@ -45,6 +45,7 @@
         "from": { "type": "string" },
         "to": { "type": "string" },
         "label": { "type": "string" },
+        "labels": { "type": "array", "items": { "type": "string" } },
         "region": { "type": "string" }
       }
     },

@@ -6,7 +6,10 @@ export type Status = 'pending' | 'in-flight' | 'done' | 'failed';
 export interface Edge {
   from: string;
   to: string;
+  /** The label the first Nav line declaring this link gives it. */
   label?: string;
+  /** Every label, in order, when several Nav lines declare the same link. */
+  labels?: string[];
   region?: string;
 }
 

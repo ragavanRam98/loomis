@@ -2,6 +2,7 @@
 // createProject (1.3) · syncDesignSystem (1.4) · generateScreen/awaitScreen (1.5).
 
 import { mcpToolCall, ProviderError } from './transport';
+import { applyDomOperations, domOperationsFor } from './dom-operations';
 import type { McpTransportOptions } from './transport';
 import { pollUntil, isConnectionError, TimeoutError, type PollOptions } from '../poll';
 import type { ResolvedTheme } from '../types';
@@ -15,6 +16,7 @@ import type {
   VariantOption,
   VariantGenOptions,
   GenerateOptions,
+  EditOptions,
 } from './uiprovider';
 
 export interface StitchOptions extends McpTransportOptions {
@@ -38,6 +40,14 @@ function getScreenArgs(projectId: string, screenId: string): Record<string, unkn
 function findScreenRef(result: unknown): string | undefined {
   const matches = JSON.stringify(result ?? {}).match(SCREEN_REF);
   return matches ? matches[matches.length - 1] : undefined;
+}
+
+/** What an answer says in words: its `text` values, else the answer itself, cut short. */
+function answerText(result: unknown): string {
+  const json = JSON.stringify(result ?? {});
+  const texts = [...json.matchAll(/"text":"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]);
+  const said = texts.length > 0 ? texts.join(' ') : json;
+  return said.length > 300 ? `${said.slice(0, 300)}...` : said;
 }
 
 /** Every distinct `projects/{id}/screens/{id}` reference in a provider result, in order. */
@@ -236,12 +246,13 @@ export class StitchProvider implements UIProvider {
     projectId: string,
     screenId: string,
     feedback: string,
-    opts?: GenerateOptions,
+    opts?: EditOptions,
   ): Promise<EditResult> {
     // Capture the current file ref so we can tell when the edit has actually landed
     // (get_screen keeps returning the PRE-edit html until generation finishes), and the
     // device Stitch made the screen for.
     let priorFile: string | undefined;
+    let priorUrl: string | undefined;
     let screenDevice: string | undefined;
     try {
       const cur = (await mcpToolCall(
@@ -249,8 +260,9 @@ export class StitchProvider implements UIProvider {
         'get_screen',
         getScreenArgs(projectId, screenId),
         this.transportOpts,
-      )) as { htmlCode?: { name?: string }; deviceType?: string };
+      )) as { htmlCode?: { name?: string; downloadUrl?: string }; deviceType?: string };
       priorFile = cur.htmlCode?.name;
+      priorUrl = cur.htmlCode?.downloadUrl;
       if (cur.deviceType && cur.deviceType !== 'DEVICE_TYPE_UNSPECIFIED') screenDevice = cur.deviceType;
     } catch {
       // best-effort; if we can't read the prior ref we just poll for html presence
@@ -276,9 +288,31 @@ export class StitchProvider implements UIProvider {
       edited = false;
     }
 
+    // An answer that names no screen either edits in place, as DOM operations for the client to
+    // apply (Stitch's own page applies them, so the screen it stores keeps its old HTML), or makes
+    // no edit at all, its agent answering in words. Apply the operations to the screen's HTML; with
+    // none, say so with Stitch's words at once rather than wait for a change that never comes.
+    const refs = edited ? findScreenRefs(result) : [];
+    if (edited && refs.length === 0) {
+      const ops = domOperationsFor(result, screenId);
+      // On top of the page as the run has it, when given: the page Stitch stores never gets an
+      // in-place edit, so an earlier one is only in the run's copy.
+      if (ops.length > 0 && (opts?.currentHtml || priorUrl)) {
+        const before = opts?.currentHtml || (await (await this.fetchImpl(priorUrl!)).text());
+        const { html, applied, skipped } = applyDomOperations(before, ops);
+        if (applied > 0) {
+          return { html, meta: { screenId, edited: true, inPlace: true, applied, skipped }, screenId };
+        }
+      }
+      throw new ProviderError(
+        `edit_screens made no edit: Stitch's answer named no screen. It said: ${answerText(result)}`,
+        'PROVIDER_NO_EDIT',
+      );
+    }
+
     // The edit may version into a NEW screen id; otherwise it edits in place. Like a generate's,
     // its answer can also name a screen it reused, such as an image, which never gets a page.
-    const ref = edited ? await this.pageAmong(findScreenRefs(result)) : findScreenRef(result);
+    const ref = edited ? await this.pageAmong(refs) : findScreenRef(result);
     const targetId = ref ? (ref.split('/').pop() ?? screenId) : screenId;
     const inPlace = targetId === screenId;
 

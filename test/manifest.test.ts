@@ -13,6 +13,15 @@ describe('manifest validation (ajv)', () => {
     expect(validate(m)).toBe(m);
   });
 
+  it("accepts an edge's label and the labels of every Nav line that declares it", () => {
+    const m = {
+      edges: [{ from: 'a', to: 'b', label: 'Rohan Sharma', labels: ['Rohan Sharma', 'Cancel the registration'] }],
+      unresolved: [],
+      screens: [],
+    };
+    expect(validate(m)).toBe(m);
+  });
+
   it('accepts the empty manifest', () => {
     expect(() => validate(emptyManifest())).not.toThrow();
   });

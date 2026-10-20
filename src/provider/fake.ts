@@ -11,6 +11,7 @@ import type {
   VariantOption,
   VariantGenOptions,
   GenerateOptions,
+  EditOptions,
 } from './uiprovider';
 
 export interface ProviderCallCounts {
@@ -43,6 +44,9 @@ export class FakeProvider implements UIProvider {
   };
 
   private seq = 0;
+
+  /** The options the last editScreen call was given, so tests can check what an edit was handed. */
+  lastEditOptions?: EditOptions;
 
   async createProject(_title?: string): Promise<string> {
     this.calls.createProject += 1;
@@ -84,9 +88,10 @@ export class FakeProvider implements UIProvider {
     _projectId: string,
     screenId: string,
     feedback: string,
-    _opts?: GenerateOptions,
+    opts?: EditOptions,
   ): Promise<EditResult> {
     this.calls.editScreen += 1;
+    this.lastEditOptions = opts;
     // Deterministically reflect the feedback so tests can assert the edit actually landed.
     const html =
       '<!doctype html>\n<html><body>\n' +

@@ -58,6 +58,17 @@ describe('refineScreen (directed edit + provenance)', () => {
     }
   });
 
+  it("hands the provider the page as the run has it, for edits made in place to add up", async () => {
+    const dir = setup();
+    try {
+      const provider = new FakeProvider();
+      await refineScreen(dir, provider, 'task-detail', 'remove the badge');
+      expect(provider.lastEditOptions?.currentHtml).toBe('<!doctype html><html><body><main>task-detail</main></body></html>');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('accumulates multiple refinements in order, versioning each prior take', async () => {
     const dir = setup();
     try {
