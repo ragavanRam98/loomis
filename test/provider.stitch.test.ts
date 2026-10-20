@@ -333,6 +333,66 @@ describe('StitchProvider (direct transport)', () => {
     expect(result.html).toContain('edited page');
   });
 
+  it('editScreen applies its DOM operations when the only screen its answer names is an image it made', async () => {
+    let t = 0;
+    const poll = { now: () => t, sleep: async (ms: number) => void (t += ms) };
+    const { fetchImpl } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'MOBILE', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      {
+        json: envelope({
+          outputComponents: [
+            { image: { name: 'projects/12345/screens/poster1' } },
+            {
+              sessionEvent: {
+                eventType: 'project.file_update',
+                eventPayload: {
+                  payload_type: 'DomOperationEvent',
+                  screen_id: 'abc',
+                  dom_operations: [{ action: 'prepend_child', selector: 'div.card', content: '<img src="https://x/poster1.png">' }],
+                },
+              },
+            },
+          ],
+        }),
+      },
+      { json: envelope({ name: 'projects/12345/screens/poster1', title: 'Poster for Salem District Rapid' }) },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl, poll });
+    const current = '<html><head></head><body><div class="card">Salem District Rapid</div></body></html>';
+    const result = await p.editScreen('12345', 'abc', 'give the card a poster', { currentHtml: current });
+    expect(result.screenId).toBe('abc');
+    expect(result.html).toContain('<img src="https://x/poster1.png">');
+    expect(t).toBe(0); // no wait on an image, which never gets a page
+  });
+
+  it('editScreen waits for whichever screen its answer names gets a page, not for an image that never will', async () => {
+    let t = 0;
+    const poll = { now: () => t, sleep: async (ms: number) => void (t += ms) };
+    let pageReads = 0;
+    const reply = (obj: unknown, text = ''): Response =>
+      ({ ok: true, status: 200, json: async () => envelope(obj), text: async () => text, arrayBuffer: async () => new ArrayBuffer(0) }) as unknown as Response;
+    const fetchImpl = (async (_url: unknown, init?: { body?: string }) => {
+      if (!init?.body) return reply({}, '<html>edited page</html>'); // the html download
+      const body = JSON.parse(init.body) as { params?: { name?: string; arguments?: { name?: string } } };
+      if (body.params?.name === 'edit_screens') {
+        return reply({
+          outputComponents: [{ design: { name: 'projects/12345/screens/page2' } }, { image: { name: 'projects/12345/screens/poster1' } }],
+        });
+      }
+      const name = body.params?.arguments?.name;
+      if (name === 'projects/12345/screens/abc') return reply({ deviceType: 'MOBILE', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } });
+      if (name === 'projects/12345/screens/page2') {
+        pageReads += 1; // the new page has no device type or html until it is made
+        return reply(pageReads < 3 ? { title: 'Home' } : { title: 'Home', deviceType: 'MOBILE', htmlCode: { name: 'files/after', downloadUrl: 'https://x/after' } });
+      }
+      return reply({ title: 'Poster' }); // poster1: an image, never a page
+    }) as unknown as typeof fetch;
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl, poll });
+    const result = await p.editScreen('12345', 'abc', 'give the cards posters');
+    expect(result.screenId).toBe('page2');
+    expect(result.html).toContain('edited page');
+  });
+
   it("editScreen fails at once, with Stitch's words, when the edit's answer names no screen", async () => {
     let t = 0;
     const poll = { now: () => t, sleep: async (ms: number) => void (t += ms) };

@@ -233,13 +233,18 @@ export class StitchProvider implements UIProvider {
   // type. The page is the last reference that has one; with a single reference, or none a page, the last is taken.
   private async pageAmong(refs: string[]): Promise<string | undefined> {
     if (refs.length <= 1) return refs[0];
+    return (await this.lastPage(refs)) ?? refs[refs.length - 1];
+  }
+
+  /** The last of the screens named that is a page (has a device type), or none. */
+  private async lastPage(refs: string[]): Promise<string | undefined> {
     for (const ref of [...refs].reverse()) {
       const screen = (await mcpToolCall(this.apiKey, 'get_screen', { name: ref }, this.transportOpts)) as {
         deviceType?: string;
       } | null;
       if (screen?.deviceType) return ref;
     }
-    return refs[refs.length - 1];
+    return undefined;
   }
 
   async editScreen(
@@ -293,54 +298,71 @@ export class StitchProvider implements UIProvider {
     // no edit at all, its agent answering in words. Apply the operations to the screen's HTML; with
     // none, say so with Stitch's words at once rather than wait for a change that never comes.
     const refs = edited ? findScreenRefs(result) : [];
+    const ops = edited ? domOperationsFor(result, screenId) : [];
+    // On top of the page as the run has it, when given: the page Stitch stores never gets an
+    // in-place edit, so an earlier one is only in the run's copy.
+    const applyInPlace = async (): Promise<EditResult | undefined> => {
+      if (ops.length === 0 || !(opts?.currentHtml || priorUrl)) return undefined;
+      const before = opts?.currentHtml || (await (await this.fetchImpl(priorUrl!)).text());
+      const { html, applied, skipped } = applyDomOperations(before, ops);
+      return applied > 0 ? { html, meta: { screenId, edited: true, inPlace: true, applied, skipped }, screenId } : undefined;
+    };
     if (edited && refs.length === 0) {
-      const ops = domOperationsFor(result, screenId);
-      // On top of the page as the run has it, when given: the page Stitch stores never gets an
-      // in-place edit, so an earlier one is only in the run's copy.
-      if (ops.length > 0 && (opts?.currentHtml || priorUrl)) {
-        const before = opts?.currentHtml || (await (await this.fetchImpl(priorUrl!)).text());
-        const { html, applied, skipped } = applyDomOperations(before, ops);
-        if (applied > 0) {
-          return { html, meta: { screenId, edited: true, inPlace: true, applied, skipped }, screenId };
-        }
-      }
+      const inPlaceEdit = await applyInPlace();
+      if (inPlaceEdit) return inPlaceEdit;
       throw new ProviderError(
         `edit_screens made no edit: Stitch's answer named no screen. It said: ${answerText(result)}`,
         'PROVIDER_NO_EDIT',
       );
     }
 
-    // The edit may version into a NEW screen id; otherwise it edits in place. Like a generate's,
-    // its answer can also name a screen it reused, such as an image, which never gets a page.
-    const ref = edited ? await this.pageAmong(refs) : findScreenRef(result);
-    const targetId = ref ? (ref.split('/').pop() ?? screenId) : screenId;
-    const inPlace = targetId === screenId;
+    // The edit may version into a NEW screen id; otherwise it edits in place. Its answer can also
+    // name screens that never get a page, such as images it made for the page or reused. With no
+    // page among them, an answer with DOM operations edited in place, the operations putting the
+    // images on the page; otherwise wait for whichever named screen gets a page, not the last only.
+    let waitFor: string[];
+    if (!edited) {
+      waitFor = [findScreenRef(result) ?? `projects/${projectId}/screens/${screenId}`];
+    } else {
+      const page = refs.length > 1 ? await this.lastPage(refs) : ops.length > 0 ? undefined : refs[0];
+      if (page) {
+        waitFor = [page];
+      } else {
+        const inPlaceEdit = await applyInPlace();
+        if (inPlaceEdit) return inPlaceEdit;
+        waitFor = refs;
+      }
+    }
+    const ids = waitFor.map((r) => r.split('/').pop() ?? screenId);
 
     // An edit can take minutes to land. If it still hasn't, say which screen Stitch is making,
     // so it can be fetched later instead of paying for the edit again.
-    let screen: { htmlCode?: { downloadUrl?: string }; screenshot?: { downloadUrl?: string } };
+    type Landed = { htmlCode?: { downloadUrl?: string; name?: string }; screenshot?: { downloadUrl?: string } };
+    let targetId: string;
+    let screen: Landed;
     try {
-      screen = (await pollUntil(
-        () =>
-          mcpToolCall(
-            this.apiKey,
-            'get_screen',
-            getScreenArgs(projectId, targetId),
-            this.transportOpts,
-          ),
-        (s) => {
-          const sc = s as { htmlCode?: { downloadUrl?: string; name?: string } } | null;
-          if (typeof sc?.htmlCode?.downloadUrl !== 'string') return false;
-          // Editing in place: wait until the file ref differs from the pre-edit one.
-          if (inPlace && priorFile && sc.htmlCode?.name === priorFile) return false;
-          return true;
+      const found = await pollUntil(
+        async () => {
+          for (const id of ids) {
+            const sc = (await mcpToolCall(this.apiKey, 'get_screen', getScreenArgs(projectId, id), this.transportOpts)) as Landed | null;
+            if (typeof sc?.htmlCode?.downloadUrl !== 'string') continue;
+            // Editing in place: wait until the file ref differs from the pre-edit one.
+            if (id === screenId && priorFile && sc.htmlCode?.name === priorFile) continue;
+            return { id, sc };
+          }
+          return null;
         },
+        (v) => v !== null,
         { maxMs: EDIT_WAIT_MS, ...this.pollClock },
-      )) as typeof screen;
+      );
+      targetId = found!.id;
+      screen = found!.sc;
     } catch (e) {
       if (!(e instanceof TimeoutError)) throw e;
+      const names = ids.map((id) => `projects/${projectId}/screens/${id}`);
       throw new TimeoutError(
-        `the edit hadn't landed after ${EDIT_WAIT_MS / 60000} minutes; Stitch's screen is projects/${projectId}/screens/${targetId}`,
+        `the edit hadn't landed after ${EDIT_WAIT_MS / 60000} minutes; ` +
+          (names.length === 1 ? `Stitch's screen is ${names[0]}` : `Stitch's screens are ${names.join(', ')}`),
       );
     }
 
