@@ -39,9 +39,16 @@ export function deriveNavGraph(experienceMd: string, knownScreenIds: string[] = 
   const useKnown = known.size > 0;
 
   const entry = new Set<string>();
-  const edgeKeys = new Set<string>();
+  const byKey = new Map<string, Edge>();
   const edges: Edge[] = [];
   const unresolved = new Set<string>();
+  // The IA's "Reached from" edges: the drill-down tree, the only edges a way back is guessed for.
+  const reachedFrom: Edge[] = [];
+  const addEdge = (edge: Edge): Edge => {
+    byKey.set(`${edge.from}->${edge.to}`, edge);
+    edges.push(edge);
+    return edge;
+  };
 
   for (const r of rows) {
     const targetId = slugify(r.surface);
@@ -74,43 +81,47 @@ export function deriveNavGraph(experienceMd: string, knownScreenIds: string[] = 
         unresolved.add(`${sourceId} -> ${targetId} (no source screen)`);
         continue;
       }
-      const key = `${sourceId}->${targetId}`;
-      if (!edgeKeys.has(key)) {
-        edgeKeys.add(key);
-        edges.push({ from: sourceId, to: targetId });
+      if (!byKey.has(`${sourceId}->${targetId}`)) {
+        reachedFrom.push(addEdge({ from: sourceId, to: targetId }));
       }
     }
   }
 
   // Per-surface Nav declarations (sidebars, CTAs, drill-downs) become edges too - the
   // page-graph reflects ALL declared navigation, not only the IA "Reached from" tree.
+  // Each edge keeps the label its Nav line gives the link (`- See the requests -> Requests`),
+  // the first one when several lines link the same two screens, so `wire` can find the
+  // element the spec names even when the provider drops its hook.
+  const declaresNav = new Set<string>();
   for (const r of rows) {
     const fromId = slugify(r.surface);
     if (useKnown && !known.has(fromId)) continue;
-    for (const nt of parseSurfaceSpec(experienceMd, r.surface).navTargets) {
+    const navTargets = parseSurfaceSpec(experienceMd, r.surface).navTargets;
+    if (navTargets.length > 0) declaresNav.add(fromId);
+    for (const nt of navTargets) {
       const toId = nt.target;
       if (!toId || toId === fromId) continue;
       if (useKnown && !known.has(toId)) {
         unresolved.add(`${fromId} -> ${toId} (nav target, no screen)`);
         continue;
       }
-      const key = `${fromId}->${toId}`;
-      if (!edgeKeys.has(key)) {
-        edgeKeys.add(key);
-        edges.push({ from: fromId, to: toId });
+      const existing = byKey.get(`${fromId}->${toId}`);
+      if (existing) {
+        if (!existing.label) existing.label = nt.label;
+        continue;
       }
+      addEdge({ from: fromId, to: toId, label: nt.label });
     }
   }
 
-  // Back edges: any non-entry target can navigate back to where it was reached from,
-  // so the back affordance becomes tracked (and wireable) instead of an invisible blind spot.
-  for (const e of [...edges]) {
-    if (entry.has(e.to)) continue;
-    const key = `${e.to}->${e.from}`;
-    if (!edgeKeys.has(key)) {
-      edgeKeys.add(key);
-      edges.push({ from: e.to, to: e.from });
-    }
+  // Back edges: a non-entry target can navigate back to where it was reached from, so the
+  // back affordance becomes tracked (and wireable) instead of an invisible blind spot. Only
+  // the IA's "Reached from" edges get one: a Nav line is a one-way link (a top bar's Profile
+  // on every page doesn't make Profile link back to every page). And a surface whose Nav
+  // list declares its links gets none guessed on top of them.
+  for (const e of reachedFrom) {
+    if (entry.has(e.to) || declaresNav.has(e.to)) continue;
+    if (!byKey.has(`${e.to}->${e.from}`)) addEdge({ from: e.to, to: e.from });
   }
 
   edges.sort((a, b) => `${a.from}->${a.to}`.localeCompare(`${b.from}->${b.to}`));

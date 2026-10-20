@@ -253,6 +253,69 @@ describe('StitchProvider (direct transport)', () => {
     ]);
   });
 
+  it('editScreen takes the edited page when its answer also names an asset', async () => {
+    const { fetchImpl } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'DESKTOP', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      {
+        json: envelope({
+          outputComponents: [
+            { design: { name: 'projects/12345/screens/page2' } },
+            { image: { name: 'projects/12345/screens/poster1' } },
+          ],
+        }),
+      },
+      { json: envelope({ name: 'projects/12345/screens/poster1', title: 'Poster' }) },
+      { json: envelope({ name: 'projects/12345/screens/page2', title: 'Dashboard', deviceType: 'DESKTOP' }) },
+      { json: envelope({ htmlCode: { name: 'files/after', downloadUrl: 'https://x/after' } }) },
+      { text: '<html>edited page</html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    const result = await p.editScreen('12345', 'abc', 'remove the badge');
+    expect(result.screenId).toBe('page2');
+    expect(result.html).toContain('edited page');
+  });
+
+  it('editScreen waits longer than three minutes for an edit to land', async () => {
+    let t = 0;
+    const poll = { now: () => t, sleep: async (ms: number) => void (t += ms) };
+    const notReady = { json: envelope({ name: 'projects/12345/screens/page2', deviceType: 'DESKTOP' }) };
+    const { fetchImpl } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'DESKTOP', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      { json: envelope({ outputComponents: [{ design: { name: 'projects/12345/screens/page2' } }] }) },
+      ...Array.from({ length: 48 }, () => notReady), // four minutes of polls every 5 seconds
+      { json: envelope({ htmlCode: { name: 'files/after', downloadUrl: 'https://x/after' } }) },
+      { text: '<html>edited late</html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl, poll });
+    const result = await p.editScreen('12345', 'abc', 'remove the badge');
+    expect(result.html).toContain('edited late');
+  });
+
+  it("editScreen names Stitch's screen when an edit isn't ready in time, so it can be fetched later", async () => {
+    let t = 0;
+    const poll = { now: () => t, sleep: async (ms: number) => void (t += ms) };
+    const { fetchImpl } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'DESKTOP', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      { json: envelope({ outputComponents: [{ design: { name: 'projects/12345/screens/page2' } }] }) },
+      { json: envelope({ name: 'projects/12345/screens/page2', deviceType: 'DESKTOP' }) },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl, poll });
+    await expect(p.editScreen('12345', 'abc', 'remove the badge')).rejects.toThrow('projects/12345/screens/page2');
+  });
+
+  it('editScreen edits a screen as the device Stitch made it for, not the project default', async () => {
+    const { fetchImpl, bodies } = recordingResponsesFetch([
+      { json: envelope({ deviceType: 'MOBILE', htmlCode: { name: 'files/before', downloadUrl: 'https://x/before' } }) },
+      { json: envelope({ outputComponents: [{ design: { name: 'projects/12345/screens/abc' } }] }) },
+      { json: envelope({ htmlCode: { name: 'files/after', downloadUrl: 'https://x/after' } }) },
+      { text: '<html>edited</html>' },
+    ]);
+    const p = new StitchProvider({ apiKey: 'k', fetchImpl });
+    await p.editScreen('12345', 'abc', 'add the empty state', { device: 'desktop' });
+    const edit = bodies.find((b) => b?.params?.name === 'edit_screens');
+    expect(edit?.params?.arguments?.deviceType).toBe('MOBILE');
+  });
+
   it('generateVariants asks get_screen for each new option by its resource name alone', async () => {
     const { fetchImpl, bodies } = recordingResponsesFetch([
       { json: envelope({ screens: [{ name: 'projects/12345/screens/abc' }] }) },

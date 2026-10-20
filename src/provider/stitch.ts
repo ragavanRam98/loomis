@@ -3,7 +3,7 @@
 
 import { mcpToolCall, ProviderError } from './transport';
 import type { McpTransportOptions } from './transport';
-import { pollUntil, isConnectionError } from '../poll';
+import { pollUntil, isConnectionError, TimeoutError, type PollOptions } from '../poll';
 import type { ResolvedTheme } from '../types';
 import type {
   UIProvider,
@@ -20,7 +20,12 @@ import type {
 export interface StitchOptions extends McpTransportOptions {
   /** Explicit key (tests); otherwise read once from process.env.STITCH_API_KEY. */
   apiKey?: string;
+  /** The clock an edit's wait runs on (tests); otherwise real time. */
+  poll?: Pick<PollOptions, 'sleep' | 'now'>;
 }
+
+/** How long an edit may take to land. Stitch says an edit can take minutes, and a big page's can take more than three. */
+const EDIT_WAIT_MS = 10 * 60 * 1000;
 
 const SCREEN_REF = /projects\/[^/"\s]+\/screens\/[0-9A-Za-z]+/g;
 
@@ -98,6 +103,7 @@ export class StitchProvider implements UIProvider {
   // The secret is read in exactly ONE place and never logged.
   private readonly apiKey: string;
   private readonly transportOpts: McpTransportOptions;
+  private readonly pollClock: Pick<PollOptions, 'sleep' | 'now'>;
 
   constructor(opts: StitchOptions = {}) {
     const key = opts.apiKey ?? process.env.STITCH_API_KEY;
@@ -106,6 +112,7 @@ export class StitchProvider implements UIProvider {
     }
     this.apiKey = key;
     this.transportOpts = { fetchImpl: opts.fetchImpl, endpoint: opts.endpoint };
+    this.pollClock = opts.poll ?? {};
   }
 
   private get fetchImpl(): typeof fetch {
@@ -232,16 +239,19 @@ export class StitchProvider implements UIProvider {
     opts?: GenerateOptions,
   ): Promise<EditResult> {
     // Capture the current file ref so we can tell when the edit has actually landed
-    // (get_screen keeps returning the PRE-edit html until generation finishes).
+    // (get_screen keeps returning the PRE-edit html until generation finishes), and the
+    // device Stitch made the screen for.
     let priorFile: string | undefined;
+    let screenDevice: string | undefined;
     try {
       const cur = (await mcpToolCall(
         this.apiKey,
         'get_screen',
         getScreenArgs(projectId, screenId),
         this.transportOpts,
-      )) as { htmlCode?: { name?: string } };
+      )) as { htmlCode?: { name?: string }; deviceType?: string };
       priorFile = cur.htmlCode?.name;
+      if (cur.deviceType && cur.deviceType !== 'DEVICE_TYPE_UNSPECIFIED') screenDevice = cur.deviceType;
     } catch {
       // best-effort; if we can't read the prior ref we just poll for html presence
     }
@@ -250,39 +260,55 @@ export class StitchProvider implements UIProvider {
       projectId,
       selectedScreenIds: [screenId],
       prompt: feedback,
-      deviceType: (opts?.device ?? 'desktop').toUpperCase(),
+      // Edit the screen as the device it was made for: Stitch can make a phone screen in a
+      // desktop project, and an edit sent as desktop would lay it out again for a desktop.
+      deviceType: screenDevice ?? (opts?.device ?? 'desktop').toUpperCase(),
     };
 
     let result: unknown;
+    let edited = true;
     try {
       result = await mcpToolCall(this.apiKey, 'edit_screens', args, this.transportOpts);
     } catch (e) {
       if (!isConnectionError(e)) throw e;
       // Dropped connection: the edit may have SILENTLY SUCCEEDED - reconcile, never re-issue.
       result = await mcpToolCall(this.apiKey, 'list_screens', { projectId }, this.transportOpts);
+      edited = false;
     }
 
-    // The edit may version into a NEW screen id; otherwise it edits in place.
-    const ref = findScreenRef(result);
+    // The edit may version into a NEW screen id; otherwise it edits in place. Like a generate's,
+    // its answer can also name a screen it reused, such as an image, which never gets a page.
+    const ref = edited ? await this.pageAmong(findScreenRefs(result)) : findScreenRef(result);
     const targetId = ref ? (ref.split('/').pop() ?? screenId) : screenId;
     const inPlace = targetId === screenId;
 
-    const screen = (await pollUntil(
-      () =>
-        mcpToolCall(
-          this.apiKey,
-          'get_screen',
-          getScreenArgs(projectId, targetId),
-          this.transportOpts,
-        ),
-      (s) => {
-        const sc = s as { htmlCode?: { downloadUrl?: string; name?: string } } | null;
-        if (typeof sc?.htmlCode?.downloadUrl !== 'string') return false;
-        // Editing in place: wait until the file ref differs from the pre-edit one.
-        if (inPlace && priorFile && sc.htmlCode?.name === priorFile) return false;
-        return true;
-      },
-    )) as { htmlCode?: { downloadUrl?: string }; screenshot?: { downloadUrl?: string } };
+    // An edit can take minutes to land. If it still hasn't, say which screen Stitch is making,
+    // so it can be fetched later instead of paying for the edit again.
+    let screen: { htmlCode?: { downloadUrl?: string }; screenshot?: { downloadUrl?: string } };
+    try {
+      screen = (await pollUntil(
+        () =>
+          mcpToolCall(
+            this.apiKey,
+            'get_screen',
+            getScreenArgs(projectId, targetId),
+            this.transportOpts,
+          ),
+        (s) => {
+          const sc = s as { htmlCode?: { downloadUrl?: string; name?: string } } | null;
+          if (typeof sc?.htmlCode?.downloadUrl !== 'string') return false;
+          // Editing in place: wait until the file ref differs from the pre-edit one.
+          if (inPlace && priorFile && sc.htmlCode?.name === priorFile) return false;
+          return true;
+        },
+        { maxMs: EDIT_WAIT_MS, ...this.pollClock },
+      )) as typeof screen;
+    } catch (e) {
+      if (!(e instanceof TimeoutError)) throw e;
+      throw new TimeoutError(
+        `the edit hadn't landed after ${EDIT_WAIT_MS / 60000} minutes; Stitch's screen is projects/${projectId}/screens/${targetId}`,
+      );
+    }
 
     const htmlUrl = screen.htmlCode?.downloadUrl;
     if (!htmlUrl) {

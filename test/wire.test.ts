@@ -133,6 +133,66 @@ describe('wireHtml (FR-9, FR-12, NFR-3)', () => {
     // The CTA anchor is chosen over the KPI card, and stays an <a>.
     expect(out).toMatch(/<a[^>]*href="report-detail\.html"[^>]*>View report/);
   });
+
+  it('wires a declared link by its label when the hook is missing and the text never names the target', () => {
+    const m: Manifest = {
+      entry: ['dashboard'],
+      edges: [{ from: 'dashboard', to: 'requests-queue', label: 'See the requests' }],
+      unresolved: [],
+      screens: [
+        { screenId: 'dashboard', surface: 'Dashboard', status: 'done' },
+        { screenId: 'requests-queue', surface: 'Requests queue', status: 'done' },
+      ],
+    };
+    const html = `<main><section><h2>Needs attention</h2><button class="link">See the requests</button></section></main>`;
+    expect(wireHtml(html, m, 'dashboard')).toMatch(/<a[^>]*href="requests-queue\.html"[^>]*>See the requests<\/a>/);
+  });
+
+  it('prefers the element carrying the label over one that only names the target', () => {
+    const m: Manifest = {
+      entry: ['dashboard'],
+      edges: [{ from: 'dashboard', to: 'refunds', label: 'See the refunds' }],
+      unresolved: [],
+      screens: [
+        { screenId: 'dashboard', surface: 'Dashboard', status: 'done' },
+        { screenId: 'refunds', surface: 'Refunds', status: 'done' },
+      ],
+    };
+    const html = `<main><button>Refunds</button><p>1 failed</p><button>See the refunds</button></main>`;
+    const out = wireHtml(html, m, 'dashboard');
+    expect(out).toMatch(/<a[^>]*href="refunds\.html"[^>]*>See the refunds<\/a>/);
+    expect(out).toContain('<button>Refunds</button>');
+  });
+
+  it('wires a labelled link into an entry screen to its label, not to a back arrow', () => {
+    const m: Manifest = {
+      entry: ['sign-in'],
+      edges: [{ from: 'profile', to: 'sign-in', label: 'Sign out' }],
+      unresolved: [],
+      screens: [
+        { screenId: 'profile', surface: 'Profile', status: 'done' },
+        { screenId: 'sign-in', surface: 'Sign in', status: 'done' },
+      ],
+    };
+    const html = `<header><button data-icon="arrow_back">arrow_back</button><nav><button>Sign out</button></nav></header>`;
+    const out = wireHtml(html, m, 'profile');
+    expect(out).toMatch(/<a[^>]*href="sign-in\.html"[^>]*>Sign out<\/a>/);
+    expect(out).toContain('<button data-icon="arrow_back">arrow_back</button>');
+  });
+
+  it('matches a label across typographic differences (an ellipsis, a curly apostrophe)', () => {
+    const m: Manifest = {
+      entry: ['detail'],
+      edges: [{ from: 'detail', to: 'changes', label: 'Correct the player’s details…' }],
+      unresolved: [],
+      screens: [
+        { screenId: 'detail', surface: 'Detail', status: 'done' },
+        { screenId: 'changes', surface: 'Registration actions', status: 'done' },
+      ],
+    };
+    const html = `<main><button>Correct the player's details...</button></main>`;
+    expect(wireHtml(html, m, 'detail')).toContain('href="changes.html"');
+  });
 });
 
 describe('wireRunFolder (unwired-edge reporting)', () => {

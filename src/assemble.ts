@@ -134,10 +134,23 @@ export async function vendorAssets(
   assetsDir: string,
   fetchImpl?: typeof fetch,
 ): Promise<{ html: string; count: number }> {
-  if (!/https?:\/\//i.test(html)) return { html, count: 0 };
+  if (!/https?:\/\//i.test(html) && !/preconnect|dns-prefetch/i.test(html)) return { html, count: 0 };
 
   const $ = cheerio.load(html);
   const ctx: VendorContext = { assetsDir, fetchImpl: fetchImpl ?? fetch, cache: new Map() };
+
+  // Connection hints (preconnect, dns-prefetch) only warm up remote hosts, such as Google
+  // Fonts', which the bundle never calls once its assets are local: they go, so the offline
+  // bundle names no remote host at all.
+  let dropped = 0;
+  for (const el of $('link[rel][href]').toArray()) {
+    const rels = ($(el).attr('rel') ?? '').toLowerCase().split(/\s+/);
+    const remote = /^(https?:)?\/\//i.test($(el).attr('href') ?? '');
+    if (remote && (rels.includes('preconnect') || rels.includes('dns-prefetch'))) {
+      $(el).remove();
+      dropped += 1;
+    }
+  }
 
   for (const el of $('link[href], script[src], img[src]').toArray()) {
     const $el = $(el);
@@ -165,7 +178,7 @@ export async function vendorAssets(
   }
 
   const count = ctx.cache.size;
-  if (count === 0) return { html, count: 0 };
+  if (count === 0 && dropped === 0) return { html, count: 0 };
   return { html: $.html(), count };
 }
 

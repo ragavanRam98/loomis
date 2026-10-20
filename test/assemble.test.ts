@@ -102,6 +102,23 @@ describe('vendorAssets (offline, NFR-2)', () => {
     }
   });
 
+  it('drops connection hints to remote hosts, which an offline bundle never uses', async () => {
+    const dir = tmp();
+    try {
+      const html =
+        '<html><head><link rel="preconnect" href="https://fonts.googleapis.com">' +
+        '<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">' +
+        '<link rel="dns-prefetch" href="//cdn.example"></head><body><p>hi</p></body></html>';
+      const r = await vendorAssets(html, join(dir, 'assets'), fakeNet({}));
+      expect(r.html).not.toContain('preconnect');
+      expect(r.html).not.toContain('dns-prefetch');
+      expect(r.html).not.toMatch(/(https?:)?\/\/(fonts|cdn)\./);
+      expect(r.html).toContain('<p>hi</p>');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('is a no-op when there are no external assets', async () => {
     const html = `<html><body><p>local only</p></body></html>`;
     const r = await vendorAssets(html, join(tmpdir(), 'loomis-never-created'));

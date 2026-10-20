@@ -17,6 +17,17 @@ const FORWARD_ICONS = ['arrow_forward', 'arrow_forward_ios', 'chevron_right', 'n
 // Don't wrap/replace table-structural tags - it would break the table.
 const STRUCTURAL = new Set(['tr', 'td', 'th', 'thead', 'tbody', 'tfoot', 'table', 'col', 'colgroup']);
 
+/** Text as matching sees it: lower case, typographic quotes and ellipses as ASCII, whitespace collapsed. */
+function matchText(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[‘’‛′]/g, "'")
+    .replace(/[“”″]/g, '"')
+    .replace(/…/g, '...')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Human cues meaning "go to <target>", from the target's surface name + CTA verbs (NOT the slug only). */
 function forwardMatchTerms(surface: string, slug: string): string[] {
   const s = surface.toLowerCase().trim();
@@ -57,6 +68,10 @@ function fallbackWire($: cheerio.CheerioAPI, manifest: Manifest, screenId: strin
     const targetSurface =
       manifest.screens.find((s) => s.screenId === edge.to)?.surface ?? edge.to.replace(/-/g, ' ');
     const terms = forwardMatchTerms(targetSurface, edge.to);
+    // The label the spec gives this link (`- See the requests -> Requests queue`) names the
+    // element outright, so it matches first, and for a link into an entry screen (Sign out)
+    // it beats the back-arrow guess.
+    const label = edge.label ? matchText(edge.label) : '';
 
     // Rank matches: prefer a real link/button with a focused label over a generic container.
     const matches: Array<{ el: El; score: number }> = [];
@@ -64,13 +79,15 @@ function fallbackWire($: cheerio.CheerioAPI, manifest: Manifest, screenId: strin
       const $el = $(el);
       const tag = tagOf(el);
       const icon = ($el.attr('data-icon') ?? '').toLowerCase();
-      const text = $el.text().trim().toLowerCase();
+      const text = matchText($el.text());
       const hay = `${icon} ${text}`;
-      const hit = isBack
-        ? BACK_ICONS.some((b) => hay.includes(b))
-        : icon === edge.to || terms.some((t) => hay.includes(t));
+      const labelHit = label.length > 0 && text.includes(label);
+      const hit =
+        labelHit ||
+        (isBack ? BACK_ICONS.some((b) => hay.includes(b)) : icon === edge.to || terms.some((t) => hay.includes(t)));
       if (!hit) continue;
       let score = 0;
+      if (labelHit) score += text === label ? 6 : 4;
       if (tag === 'a' || tag === 'button') score += 3;
       if (text.length > 0 && text.length <= 40) score += 2;
       if (isBack && BACK_ICONS.some((b) => icon.includes(b))) score += 2;

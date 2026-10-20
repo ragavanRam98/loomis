@@ -6,7 +6,14 @@ We're pre-1.0, so the CLI verbs and the JSON output can still change between min
 
 ## [Unreleased]
 
+### Added
+- Links are wired by their labels. `nav-graph` keeps the label each `- Label -> Screen` line in `EXPERIENCE.md` gives a link, and `wire` looks for that label first. A link whose `data-nav` hook Stitch dropped, or whose hook still names a screen the spec has since changed, now goes on the element that carries its label. A labelled link into a start screen, such as Sign out, goes on its label instead of a back arrow.
+
 ### Fixed
+- `wire` no longer reports links nobody declared. `nav-graph` guessed a way back for every link, so a top bar's Profile link on every page made Profile "link back" to every page, and those guesses were all 65 of the unconnected edges in a real 34-screen run. A link in a Nav list is now one-way. The IA's "Reached from" edges still get a way back, except out of a screen whose Nav list already declares its links.
+- `refine` no longer loses edits Stitch has made. It waited three minutes for the edited page, and an edit of a big page can take longer; and the answer to an edit can name an image beside the page, while Loomis polled the last screen named. A refine now takes the page, as a generate does, and waits up to ten minutes. If the edit still hasn't landed, the error names Stitch's screen, so it can be fetched later instead of paid for again.
+- `refine` edits a screen as the device Stitch made it for. Stitch can make a phone screen in a project whose `DESIGN.md` says desktop, and the edit went to Stitch as a desktop one, which can lay the screen out again for a desktop.
+- The bundle names no remote host at all. `assemble` already vendored Google Fonts, but kept each page's `preconnect` hints to Google's hosts. Connection hints to remote hosts now go when assets are vendored.
 - Real screens arrive again. Stitch's `get_screen` now takes the screen's resource name alone and refuses a request with any other field, so every screen timed out after Stitch had generated it. Loomis now sends only the name.
 - A tool that runs but fails (MCP's `isError`) is raised as an error with its message, instead of being taken as an answer that a poll waits on until it times out.
 - A screen can no longer come out as an image. Stitch's answer to a generate can name a screen it reused, such as a logo, beside the new page, and Loomis took the last one named. It now takes the page, the screen with a device type.
