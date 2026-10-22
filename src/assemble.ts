@@ -2,7 +2,7 @@
 // into out/, vendoring external assets into out/assets/ so the site runs fully offline.
 
 import * as cheerio from 'cheerio';
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readManifest } from './manifest';
@@ -97,13 +97,28 @@ async function rewriteCssUrls(ctx: VendorContext, css: string, inAssetsDir: bool
   return out;
 }
 
+/**
+ * The copy an earlier assemble vendored for a URL that no longer answers: a provider's image URLs expire,
+ * and the bundle keeps the copy rather than a link that is now broken. Its name is the one `localNameFor`
+ * gave it, whatever extension the content type added.
+ */
+function previouslyVendored(ctx: VendorContext, url: string): string | undefined {
+  if (!existsSync(ctx.assetsDir)) return undefined;
+  const stem = localNameFor(url).replace(/\.[a-zA-Z0-9]{1,6}$/, '');
+  const name = readdirSync(ctx.assetsDir).find((f) => f === stem || f.startsWith(`${stem}.`));
+  if (!name) return undefined;
+  const rel = `assets/${name}`;
+  ctx.cache.set(url, rel);
+  return rel;
+}
+
 /** Fetch one external URL into assets/, recursing into CSS. Returns its relative path. */
 async function vendorOne(ctx: VendorContext, url: string): Promise<string | undefined> {
   const cached = ctx.cache.get(url);
   if (cached) return cached;
   try {
     const res = await ctx.fetchImpl(url);
-    if (!res.ok) return undefined;
+    if (!res.ok) return previouslyVendored(ctx, url);
 
     const contentType = res.headers?.get?.('content-type') ?? undefined;
     const buffer = new Uint8Array(await res.arrayBuffer());
@@ -121,7 +136,7 @@ async function vendorOne(ctx: VendorContext, url: string): Promise<string | unde
     return rel;
   } catch {
     ctx.cache.delete(url); // never let one bad asset crash the bundle
-    return undefined;
+    return previouslyVendored(ctx, url);
   }
 }
 

@@ -75,6 +75,25 @@ describe('vendorAssets (offline, NFR-2)', () => {
     }
   });
 
+  it("keeps the copy an earlier assemble vendored when the asset's URL no longer answers", async () => {
+    const dir = tmp();
+    try {
+      // A provider's image URL, with no extension in its path, that later expires (HTTP 403).
+      const url = 'https://images.example/aida/AEtjO1VfBceQfcL6kkoBXhn5HZ5d9JcF';
+      const html = `<html><body><img src="${url}"></body></html>`;
+      const first = await vendorAssets(html, join(dir, 'assets'), fakeNet({ [url]: { body: new Uint8Array([7, 7]), type: 'image/jpeg' } }));
+      const local = /src="(assets\/[^"]+)"/.exec(first.html)?.[1];
+      expect(local).toMatch(/\.jpg$/);
+
+      const expired = (async () => ({ ok: false, status: 403 }) as unknown as Response) as unknown as typeof fetch;
+      const again = await vendorAssets(html, join(dir, 'assets'), expired);
+      expect(again.html).not.toContain('https://images.example');
+      expect(again.html).toContain(`src="${local}"`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('recurses into CSS @font-face url() and keeps extensions (true offline)', async () => {
     const dir = tmp();
     try {
